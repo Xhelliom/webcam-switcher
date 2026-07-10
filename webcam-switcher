@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# webcam-switcher — webcam interne IPU6 (ov08x40) "à la demande" via v4l2loopback.
+#
+#   Au repos : un splash noir alimente en continu le loopback (/dev/video0) → le
+#              device reste LISTÉ (Teams/Chrome le voient) mais libcamera n'est PAS
+#              lancé → capteur + LED de confidentialité ÉTEINTS.
+#   Quand une app ouvre le loopback (Teams, Meet, OBS…) : bascule automatiquement
+#              sur la vraie caméra (debayer softISP sur GPU Intel via Mesa) → LED
+#              allumée, image ~21 fps 720p. Retour au splash (LED éteinte) dès que
+#              l'app relâche la caméra.
+#
+# Pourquoi ce montage (voir README) :
+#   - machine hybride Intel iGPU + NVIDIA dGPU : libcamera choisit par défaut l'EGL
+#     NVIDIA dont le driver rate le framebuffer → on force l'EGL Mesa/Intel.
+#   - le capteur ov08x40 plafonne à ~3,6 fps en mode binné (720/1080p) mais fait
+#     ~28 fps en plein format → on capture en 3840x2160 puis videoscale → 720p.
+#   - relayd (l'outil standard on-demand) plante à la construction du pipeline sur
+#     cette config → ce petit switcher le remplace.
+set -u
+
+DEV="${WEBCAM_DEV:-/dev/video0}"
+WIDTH="${WEBCAM_WIDTH:-1280}"
+HEIGHT="${WEBCAM_HEIGHT:-720}"
+GRACE="${WEBCAM_GRACE:-3}"          # secondes de grâce avant de recouper (anti-flapping)
+MESA_VENDOR=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+
+# Force le softISP sur le GPU Intel (Mesa), pas le NVIDIA.
+export __EGL_VENDOR_LIBRARY_FILENAMES="$MESA_VENDOR"
+export LIBCAMERA_SOFTISP_MODE=gpu
+
+splash() {
+  exec gst-launch-1.0 -q videotestsrc pattern=black is-live=true \
+    ! video/x-raw,format=YUY2,width="$WIDTH",height="$HEIGHT",framerate=10/1 \
+    ! v4l2sink device="$DEV" sync=false
+}
+camera() {
+  exec gst-launch-1.0 -q libcamerasrc \
+    ! video/x-raw,width=3840,height=2160 \
+    ! videoscale ! video/x-raw,width="$WIDTH",height="$HEIGHT" \
+    ! videoconvert ! video/x-raw,format=YUY2 \
+    ! v4l2sink device="$DEV" sync=false
+}
+
+PID=0; MODE=""
+start() { ( "$1" ) & PID=$!; MODE="$1"; }
+stopp() { [ "$PID" -gt 0 ] && { kill "$PID" 2>/dev/null; wait "$PID" 2>/dev/null; }; PID=0; }
+trap 'stopp; exit 0' INT TERM
+
+# Attend que le loopback existe (module chargé au boot).
+for _ in $(seq 1 30); do [ -e "$DEV" ] && break; sleep 1; done
+[ -e "$DEV" ] || { echo "webcam-switcher: $DEV introuvable" >&2; exit 1; }
+
+start splash
+gone=0
+while sleep 1; do
+  # relance le producteur s'il est mort
+  kill -0 "$PID" 2>/dev/null || start "$MODE"
+
+  # un consommateur = un PID qui tient $DEV et qui n'est pas notre producteur
+  cons=0
+  for p in $(fuser "$DEV" 2>/dev/null | grep -oE '[0-9]+'); do
+    [ "$p" = "$PID" ] || cons=1
+  done
+
+  if [ "$cons" = 1 ]; then
+    gone=0
+    [ "$MODE" = splash ] && { stopp; start camera; }
+  elif [ "$MODE" = camera ]; then
+    gone=$((gone + 1))
+    [ "$gone" -ge "$GRACE" ] && { stopp; start splash; gone=0; }
+  fi
+done

@@ -1,0 +1,12 @@
+[Unit]
+Description=Webcam IPU6 on-demand (auto-LED) → v4l2loopback
+Documentation=https://github.com/Xhelliom/webcam-switcher
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/webcam-switcher
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
