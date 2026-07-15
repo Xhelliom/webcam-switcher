@@ -13,19 +13,25 @@ install -Dm644 "$here/webcam-switcher.service" \
 echo ":: module config -> /etc/modprobe.d/v4l2loopback.conf (sudo)"
 sudo install -Dm644 "$here/50-v4l2loopback.conf" /etc/modprobe.d/v4l2loopback.conf
 
-# Remove a stale virtual-webcam.service that prevents exclusive_caps from sticking.
+# Remove a stale virtual-webcam.service that creates a second loopback.
 if systemctl list-unit-files virtual-webcam.service &>/dev/null; then
   echo ":: removing leftover virtual-webcam.service"
   sudo systemctl disable --now virtual-webcam.service || true
   sudo rm -f /etc/systemd/system/virtual-webcam.service
-  sudo systemctl daemon-reload || true
 fi
 
-echo ":: reload v4l2loopback with exclusive_caps=1"
-sudo modprobe -r v4l2loopback 2>/dev/null || true
-sudo modprobe v4l2loopback
+# systemd-modules-load ignores the exclusive_caps option from modprobe.d, so a
+# tiny system service reloads the module with it explicitly at boot.
+echo ":: system service -> exclusive_caps=1 at boot (sudo)"
+sudo install -Dm644 "$here/v4l2loopback-exclusive.service" \
+  /etc/systemd/system/v4l2loopback-exclusive.service
+sudo systemctl daemon-reload
 
-echo ":: enable the service"
+# Free the loopback so the reload below succeeds.
+systemctl --user stop webcam-switcher.service 2>/dev/null || true
+sudo systemctl enable --now v4l2loopback-exclusive.service
+
+echo ":: enable the switcher"
 systemctl --user daemon-reload
 systemctl --user enable --now webcam-switcher.service
 

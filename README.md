@@ -71,11 +71,21 @@ This:
 - installs `webcam-switcher` to `~/.local/bin/`,
 - installs + enables the user service `webcam-switcher.service`,
 - installs `/etc/modprobe.d/v4l2loopback.conf` (needs sudo),
-- removes a leftover `virtual-webcam.service` if present.
+- installs a `v4l2loopback-exclusive.service` that forces `exclusive_caps=1` at
+  boot (see below), and removes a leftover `virtual-webcam.service` if present.
 
-Then reboot (or `sudo modprobe -r v4l2loopback && sudo modprobe v4l2loopback`),
-and **fully restart your browser** so it re-enumerates cameras. The camera shows
+Then **fully restart your browser** so it re-enumerates cameras. The camera shows
 up as **“Camera intégrée”** (rename via `card_label` in the modprobe config).
+
+### The `exclusive_caps` catch
+
+`exclusive_caps=1` is **required** — without it the loopback also advertises
+`VIDEO_OUTPUT` and Chrome/PipeWire silently skip it (camera never listed). But
+`systemd-modules-load` ignores the option from `/etc/modprobe.d` (a kmod parsing
+quirk with the quoted `card_label`), so it comes back `N` on every boot. The
+included `v4l2loopback-exclusive.service` works around it by reloading the module
+with the explicit option early at boot. Verify with
+`cat /sys/module/v4l2loopback/parameters/exclusive_caps` → `Y,…`.
 
 ## Tuning
 
@@ -92,8 +102,6 @@ Environment variables (set them in the `.service` via `Environment=`):
   the dark). Nothing this script can fix.
 - **~2–3 s freeze** when a call first turns the camera on (splash→camera + sensor
   warm-up).
-- Depends on `exclusive_caps=1` actually applying at boot; verify with
-  `cat /sys/module/v4l2loopback/parameters/exclusive_caps` (expected `Y,…`).
 
 ## Keywords
 

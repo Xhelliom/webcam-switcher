@@ -1,0 +1,17 @@
+[Unit]
+# Forces v4l2loopback to load with exclusive_caps=1.
+# systemd-modules-load ignores the exclusive_caps option from
+# /etc/modprobe.d (kmod parsing quirk with the quoted card_label), so we
+# reload the module explicitly — which does apply it — early at boot.
+Description=Load v4l2loopback with exclusive_caps=1 (webcam-switcher)
+After=systemd-modules-load.service
+Before=graphical.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/sbin/modprobe -r v4l2loopback
+ExecStart=/sbin/modprobe v4l2loopback exclusive_caps=1 card_label="Camera intégrée"
+
+[Install]
+WantedBy=graphical.target
