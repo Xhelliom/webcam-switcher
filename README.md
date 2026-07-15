@@ -50,12 +50,20 @@ in Chrome / Microsoft Teams / Zoom / Google Meet on Linux, this is for you.
 
 `v4l2-relayd` would normally provide the on-demand behaviour, but it crashes at
 pipeline construction on this setup (`gst_element_set_state: assertion
-'GST_IS_ELEMENT (element)' failed`) — hence this ~40-line replacement.
+'GST_IS_ELEMENT (element)' failed`) — hence this small Python replacement.
+
+It keeps a **single persistent producer** (`appsrc → videoconvert → v4l2sink`)
+that never stops, and swaps what feeds it (black source ↔ camera). That's the key
+to not dropping the consumer: naively killing one pipeline and starting another
+makes the loopback lose its producer for a moment, and Chrome/PipeWire then drops
+the camera. Pushed buffers are re-timestamped, otherwise the two sources' clocks
+disagree and v4l2sink stalls at the hand-over.
 
 ## Requirements
 
+- `python` + `python-gobject` (PyGObject) and `gst-python`
 - `gstreamer` + `gst-plugins-good` (`v4l2sink`), `gst-plugin-libcamera`
-  (`libcamerasrc`), `gst-plugins-base` (`videoscale`/`videoconvert`)
+  (`libcamerasrc`), `gst-plugins-base` (`videoscale`/`videoconvert`/`appsrc`)
 - `v4l2loopback-dkms`
 - `libcamera` ≥ 0.7 (GPU software ISP) and a working **Mesa** EGL for your iGPU
 - `psmisc` (`fuser`)

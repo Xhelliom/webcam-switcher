@@ -4,7 +4,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 
 echo ":: script -> ~/.local/bin/webcam-switcher"
-install -Dm755 "$here/webcam-switcher" "$HOME/.local/bin/webcam-switcher"
+install -Dm755 "$here/webcam-switcher.py" "$HOME/.local/bin/webcam-switcher"
 
 echo ":: user service -> ~/.config/systemd/user/"
 install -Dm644 "$here/webcam-switcher.service" \
