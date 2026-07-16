@@ -59,6 +59,16 @@ makes the loopback lose its producer for a moment, and Chrome/PipeWire then drop
 the camera. Pushed buffers are re-timestamped, otherwise the two sources' clocks
 disagree and v4l2sink stalls at the hand-over.
 
+Two more reliability fixes worth calling out:
+- Consumer detection is a pure-Python `/proc` scan, not a shell-out to `fuser`.
+  `fuser` can hang for a long time on a busy desktop, and since detection runs on
+  the GLib main thread, a stuck call freezes the *entire* switcher — the camera
+  (and its LED) then stays stuck in whatever state it was in, forever.
+- Stopping the camera pipeline verifies it actually reached `Gst.State.NULL`
+  (`get_state()` with a timeout). A fire-and-forget `set_state(NULL)` can
+  silently fail to complete — same symptom: LED stuck on. If it doesn't confirm,
+  the whole process exits and systemd (`Restart=always`) brings it back up clean.
+
 ## Requirements
 
 - `python` + `python-gobject` (PyGObject) and `gst-python`
@@ -66,7 +76,6 @@ disagree and v4l2sink stalls at the hand-over.
   (`libcamerasrc`), `gst-plugins-base` (`videoscale`/`videoconvert`/`appsrc`)
 - `v4l2loopback-dkms`
 - `libcamera` ≥ 0.7 (GPU software ISP) and a working **Mesa** EGL for your iGPU
-- `psmisc` (`fuser`)
 - A mainline kernel with the in-tree IPU6 ISYS driver (≥ 6.10) and your sensor
 
 ## Install
@@ -110,6 +119,9 @@ Environment variables (set them in the `.service` via `Environment=`):
   the dark). Nothing this script can fix.
 - **~2–3 s freeze** when a call first turns the camera on (splash→camera + sensor
   warm-up).
+- Consumer detection scans `/proc` (no shell-out) once a second. A very heavy
+  process count could make that scan noticeably slower, though it's typically
+  under 50 ms.
 
 ## Keywords
 
