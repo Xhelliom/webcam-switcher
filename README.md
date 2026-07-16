@@ -111,12 +111,23 @@ Environment variables (set them in the `.service` via `Environment=`):
 - `WEBCAM_DEV` (default `/dev/video0`)
 - `WEBCAM_WIDTH` / `WEBCAM_HEIGHT` (default `1280`/`720`)
 - `WEBCAM_GRACE` seconds before dropping back to the splash (default `3`)
+- `WEBCAM_EV` auto-exposure target compensation in stops (default `-2.0`, see
+  Known limitations — more negative darkens the image)
 
 ## Known limitations
 
-- **No proper auto-exposure:** libcamera has no sensor helper for `ov08x40`, so
-  brightness tracks ambient light with a crude AE (great in a lit room, dark in
-  the dark). Nothing this script can fix.
+- **The AE runs hot by default.** libcamera has no sensor helper for `ov08x40`
+  (`IPASoft: Failed to create camera sensor helper for ov08x40`), so its generic
+  "uncalibrated" auto-exposure algorithm consistently pushes exposure/gain toward
+  their sensor maximum — verified by forcing moderate values on the sensor subdev
+  mid-stream and watching the IPA overwrite them back to near-max within ~1s, in
+  a normally lit room. It's a bad AE target, not a lack of light. Compensated with
+  `libcamerasrc`'s `exposure-value` property (`WEBCAM_EV`, default `-2.0`) — keeps
+  the AE adaptive (so it still copes with actually-dark rooms) while biasing its
+  target down. Bright, high-dynamic-range scenes (a white t-shirt against a dark
+  wardrobe, here) still clip somewhat — no calibrated sensor helper for
+  `ov08x40` means no per-scene metering fix, only this global bias. Tune
+  `WEBCAM_EV` (more negative = darker) to taste for your lighting.
 - **~2–3 s freeze** when a call first turns the camera on (splash→camera + sensor
   warm-up).
 - Consumer detection scans `/proc` (no shell-out) once a second. A very heavy

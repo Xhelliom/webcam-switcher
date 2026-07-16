@@ -31,6 +31,7 @@ DEV   = os.environ.get("WEBCAM_DEV", "/dev/video0")
 W     = int(os.environ.get("WEBCAM_WIDTH", "1280"))
 H     = int(os.environ.get("WEBCAM_HEIGHT", "720"))
 GRACE = int(os.environ.get("WEBCAM_GRACE", "3"))          # seconds before going idle
+EV    = os.environ.get("WEBCAM_EV", "-2.0")                # AE target compensation, see README
 
 # Force the software ISP onto the Intel iGPU (Mesa), not the NVIDIA dGPU.
 os.environ.setdefault("__EGL_VENDOR_LIBRARY_FILENAMES",
@@ -70,7 +71,7 @@ def feeder(name, desc):
 
 black = feeder("black", f"videotestsrc pattern=black is-live=true ! {CAPS},framerate=15/1")
 camera = feeder("camera",
-    f"libcamerasrc ! video/x-raw,width=3840,height=2160 "
+    f"libcamerasrc exposure-value={EV} ! video/x-raw,width=3840,height=2160 "
     f"! videoscale ! videoconvert ! {CAPS}")
 
 out.set_state(Gst.State.PLAYING)
