@@ -22,6 +22,7 @@ Notes:
 
 See README for the Mesa-EGL / full-frame-then-scale rationale.
 """
+import ctypes
 import os
 import gi
 gi.require_version("Gst", "1.0")
@@ -122,15 +123,35 @@ def tick():
         if mode == "idle":
             mode = "active"
             camera.set_state(Gst.State.PLAYING)   # LED on; black feeds until 1st cam frame
+            GLib.timeout_add_seconds(1, tick)      # poll for the consumer leaving
     elif mode == "active":
         gone += 1
         if gone >= GRACE:
             mode = "idle"
             SRC = "black"                          # resume splash immediately (no gap)
             stop_camera()                          # LED off, verified
+            return False                           # idle: wait for the next open instead
+    return mode == "active"
+
+# Idle costs nothing: instead of scanning /proc every second (~4% CPU), let the
+# kernel wake us when someone opens the device (inotify IN_OPEN), then confirm
+# with the scan. The 1 s poll only runs while active, to notice the consumer leaving.
+libc = ctypes.CDLL(None, use_errno=True)
+ino = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+if ino < 0 or libc.inotify_add_watch(ino, DEV.encode(), 0x20) < 0:   # 0x20 = IN_OPEN
+    raise OSError(ctypes.get_errno(), f"inotify on {DEV}")
+
+def on_open(fd, _cond):
+    try:
+        os.read(fd, 4096)                          # drain; any open is just a hint
+    except BlockingIOError:
+        pass
+    if mode == "idle":
+        tick()
     return True
 
-GLib.timeout_add_seconds(1, tick)
+GLib.io_add_watch(ino, GLib.IO_IN, on_open)
+tick()                                             # a consumer may predate us
 loop = GLib.MainLoop()
 try:
     loop.run()
