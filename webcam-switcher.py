@@ -69,7 +69,9 @@ def feeder(name, desc):
     p.get_by_name("o").connect("new-sample", on_sample)
     return p
 
-black = feeder("black", f"videotestsrc pattern=black is-live=true ! {CAPS},framerate=15/1")
+# 2 fps is plenty for an idle black frame and keeps the always-on cost near zero
+# (at 15 fps the conversion/v4l2sink thread alone burned ~10% CPU on battery).
+black = feeder("black", f"videotestsrc pattern=black is-live=true ! {CAPS},framerate=2/1")
 camera = feeder("camera",
     f"libcamerasrc exposure-value={EV} ! video/x-raw,width=3840,height=2160 "
     f"! videoscale ! videoconvert ! {CAPS}")
